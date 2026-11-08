@@ -26,8 +26,6 @@ Publication is **not live deployment**. Nothing here restarts a service. A futur
 the digest artifact (an `image@sha256:...` reference), not the mutable `main` tag.
 No deployment webhook is installed.
 
-Run the small repository policy checks with `bun test`.
-
 Local smoke test (Docker or Podman):
 
 ```sh
