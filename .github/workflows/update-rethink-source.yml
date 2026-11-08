@@ -1,0 +1,53 @@
+name: Propose Rethink main source update
+
+on:
+  schedule:
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: rethink-source-update
+  cancel-in-progress: false
+
+jobs:
+  propose:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+        with:
+          ref: main
+      - name: Propose a reviewed immutable source update
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          set -euo pipefail
+          # Leave an existing proposal untouched, including any reviewer edits.
+          existing=$(gh pr list --state open --json headRefName --jq '[.[] | select(.headRefName | startswith("rethink-source-"))] | length')
+          if [ "$existing" != 0 ]; then
+            echo 'An existing source update awaits review.' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          revision=$(python3 scripts/update-rethink-source.py)
+          if git diff --quiet; then exit 0; fi
+          branch="rethink-source-$revision"
+          git switch -c "$branch"
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add rethink/Containerfile rethink/README.md
+          git commit -m "build(rethink): pin source main to $revision"
+          git push origin "$branch"
+          gh pr create --base main --head "$branch" \
+            --title "build(rethink): update main source to $revision" \
+            --body "Pins public martinemde/rethink main to $revision and verifies the archive SHA256. Review source changes before merging. Build and offline smoke tests run via explicit workflow_dispatch; publication occurs only after merge to containers main. No runtime deployment."
+          # GITHUB_TOKEN-created PRs do not trigger pull_request workflows.
+          # workflow_dispatch is an explicit exception to token recursion suppression.
+          gh workflow run build.yml --ref "$branch"
+          echo "Source $revision proposed for review; build explicitly dispatched on $branch." >> "$GITHUB_STEP_SUMMARY"

@@ -54,5 +54,6 @@ perform a runtime migration.
 
 Source commits and base digests are immutable. Registry packages installed by
 `apk` are not snapshot-pinned, so Rethink is not claimed byte-reproducible; consume
-its published image digest. Source revision/hash updates require explicit review;
-Renovate currently manages image bases and actions, not application source pins.
+its published image digest. Source revision/hash updates require explicit review. Renovate manages image
+bases and actions. The hourly/manual Rethink updater proposes public fork `main`
+source pins in review-gated PRs; see [Rethink](rethink/README.md).

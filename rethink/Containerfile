@@ -1,4 +1,4 @@
-# Source is public fork main as verified on 2026-11-08; not a local checkout.
+# Source is a reviewed immutable public fork main revision; not a local checkout.
 FROM docker.io/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS build
 WORKDIR /app
 RUN wget -qO /tmp/source.tar.gz https://github.com/martinemde/rethink/archive/a4f24a49cec14d33993cb59e01108a917f99a728.tar.gz \
