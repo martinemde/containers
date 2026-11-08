@@ -1,0 +1,23 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": [
+    "github>martinemde/renovate-config#v1.0.0"
+  ],
+  "enabledManagers": [
+    "dockerfile",
+    "github-actions",
+    "renovate-config"
+  ],
+  "dockerfile": {
+    "managerFilePatterns": [
+      "/(^|/)Containerfile$/"
+    ]
+  },
+  "automerge": false,
+  "packageRules": [
+    {
+      "matchPackageNames": ["*"],
+      "automerge": false
+    }
+  ]
+}
