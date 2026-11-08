@@ -5,6 +5,10 @@ folder and `Containerfile`. The first image is Tailscale, selected from a declar
 Matrix sidecar; this repository does not verify or configure a running service.
 There are no host addresses, runtime settings, or secrets here.
 
+Base images must come from the first-party upstream publisher or an official
+Linux distribution. Arbitrary third-party repackaged images are not allowed.
+Every base keeps its upstream tag and an immutable digest.
+
 ## Build and publication
 
 Pull requests build and run `tailscale --version` without network access. Updates
