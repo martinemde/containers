@@ -12,25 +12,48 @@ Every base keeps its upstream tag and an immutable digest.
 
 ## Build and publication
 
-Pull requests build every matrix image and run its `test.sh` without network
-access. Rethink also runs its source tests during the build. Updates to `main`
-publish each same tested image to `ghcr.io/martinemde/<image>`, tagged
-`main` and `sha-<full commit SHA>`. The initial scope is **linux/amd64** only.
-The workflow adds OCI source and revision labels, reports the registry digest,
-and saves a `<image>-digest` artifact containing the immutable image reference.
+Pull requests and publisher-repository `main` pushes validate both existing image
+contexts; Rethink builds the reviewed default source pin and run offline smoke tests in `build.yml`. They do not publish images.
+
+`publish-rethink.yml` is the canonical publisher. It runs every **10 minutes**,
+on manual dispatch, and on relevant publisher `main` changes. It reads public
+`martinemde/rethink` main and requires a completed successful push/main run of
+`.github/workflows/ci.yml` for that exact commit, in that same repository (not a
+fork or PR). If current main has not passed CI, publication fails until it does.
+No second source-pin PR or cross-repository token is needed after an app merge.
+Scheduled Actions can be delayed or disabled by GitHub; this is not a 10-minute SLA.
+
+The publisher downloads that exact public commit archive, computes its SHA256,
+and passes both source revision and archive hash to the Containerfile. Source
+tests and compilation run during the build. It then runs offline smoke tests and
+pushes the **same tested linux/amd64 image** to
+`ghcr.io/martinemde/rethink:run-<run_id>-<run_attempt>`. Each attempt has its own tag,
+including rebuilds of the same app with changed bases or publisher recipes. The
+workflow always publishes; it never reports successful no-op runs without tags.
+BuildKit cache avoids needless rebuilding when inputs are unchanged.
+
+Labels bind `org.opencontainers.image.source` to this repository,
+`org.opencontainers.image.revision` to the publisher commit, and
+`io.github.martinemde.rethink.revision` to the application commit. The workflow
+reports the immutable registry digest and saves a `rethink-digest` artifact.
 The first GHCR package publication may need its visibility changed to public.
 
-The Tailscale wrapper inherits the upstream entrypoint, command, and image configuration.
-`stable` is the upstream tag; its manifest digest fixes the actual base bytes.
-The upstream version label remains inherited, not a new application version.
-Renovate discovers every `Containerfile` and proposes reviewed updates using the
-shared preset pinned to `v1.0.0`. Automerge is disabled for this initial proof.
-Action references are also pinned and managed by Renovate.
+Publication is **not live deployment**. Nothing here restarts a service. A
+consumer must select a successful trusted `publish-rethink.yml` run on publisher
+main (schedule, workflow_dispatch or push), resolve its exact run/attempt tag,
+check all three labels and successful app push/main CI, then deploy only the
+resolved `image@sha256:...` reference. Tags are discovery handles, not immutable
+registry enforcement. The consumer must independently validate provenance.
+The application/publisher revision pair is the logical release identity: a
+controller should verify current health and skip redeployment when both already
+match its active release. Scheduled rebuilds can otherwise produce new digests
+without a merge because Alpine packages are not snapshot-pinned. An intentional
+rebuild deployment therefore requires a new publisher main commit.
+No deployment webhook is installed; no runtime configuration or secrets belong here.
 
-Publication is **not live deployment**. Nothing here restarts a service. A future
-`deploy-main` consumer should verify a successful trusted `main` run and consume
-the digest artifact (an `image@sha256:...` reference), not the mutable `main` tag.
-No deployment webhook is installed.
+Renovate manages pinned Containerfile bases and actions using the shared preset
+`v1.0.0`. Automerge remains disabled. Application source follows CI-verified main
+only in the canonical publication workflow; local/PR defaults remain pinned.
 
 Local smoke test (Docker or Podman):
 
@@ -54,5 +77,5 @@ perform a runtime migration.
 
 Source commits and base digests are immutable. Registry packages installed by
 `apk` are not snapshot-pinned, so Rethink is not claimed byte-reproducible; consume
-its published image digest. Source revision/hash updates require explicit review;
-Renovate currently manages image bases and actions, not application source pins.
+its published image digest. The canonical publisher follows CI-verified application
+main; Renovate manages image bases and actions, not application source pins.

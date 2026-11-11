@@ -1,6 +1,6 @@
 # Rethink application image
 
-Builds public first-party fork `https://github.com/martinemde/rethink` at
+Local/PR builds default to public first-party fork `https://github.com/martinemde/rethink` at
 `e96ae725850019c59547c360ec757957b9fa9ddb` (`main`, verified with `gh api` on
 2026-11-11). Archive SHA256:
 `e2bb72b44dc78c24d27dfc72a36b02da9e4e33f8e12dd4ba2f8d12e2af4cf0ef`.
@@ -27,9 +27,23 @@ podman build --platform linux/amd64 -f rethink/Containerfile -t localhost/rethin
 podman run --rm --network none --entrypoint node localhost/rethink-test --check dist/rethink-cloud.js
 ```
 
-`test.sh IMAGE` uses Docker in CI. Update source commit, archive hash and version
-metadata and `io.github.martinemde.rethink.revision` together after reviewing fork changes. Do not replace the pin with a
-moving branch URL. Do not send private sources via build arguments or tokens.
+`test.sh IMAGE [FULL_REVISION]` uses Docker in CI. Its default expected revision
+matches the reviewed local/PR source pin. The canonical publisher instead passes
+`RETHINK_REVISION` and `RETHINK_ARCHIVE_SHA256` build args selected by `source.py`
+from exact current public main with successful trusted app CI. It passes the same
+revision to smoke tests; the compiled version and application label follow it.
+See the repository README for run tags and consumer verification requirements.
+Do not replace the archive commit with a moving branch URL or send private
+sources via build arguments or tokens.
+
+Source selection tests (no network):
+
+```sh
+python3 -m unittest discover -s rethink -p test_source.py
+```
+
+`python3 rethink/source.py` performs read-only public API/archive verification and
+prints revision, archive SHA256 and trusted app CI run ID. It does not publish.
 
 ## Validation and security review
 
