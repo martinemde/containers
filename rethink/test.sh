@@ -10,6 +10,6 @@ import { revision } from "./dist/util/version.js";
 import { existsSync } from "node:fs";
 const require = createRequire(import.meta.url);
 for (const dependency of Object.keys(require("./package.json").dependencies)) require.resolve(dependency);
-assert.match(revision, /^[0-9a-f]{7}$/);
+assert.equal(revision, "e96ae72");
 assert.ok(existsSync("./dist/html"));
 '
