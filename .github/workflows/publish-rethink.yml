@@ -24,6 +24,8 @@ jobs:
     permissions:
       contents: read
       packages: write
+      id-token: write
+      attestations: write
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
       - name: Select current application main with successful push CI
@@ -48,26 +50,41 @@ jobs:
           cache-from: type=gha,scope=rethink
           cache-to: type=gha,mode=max,scope=rethink
       - name: Smoke test without network or privileges
+        id: tested
         env:
           IMAGE: ghcr.io/martinemde/rethink:run-${{ github.run_id }}-${{ github.run_attempt }}
           APP_REVISION: ${{ steps.source.outputs.revision }}
-        run: sh rethink/test.sh "$IMAGE" "$APP_REVISION"
+        run: |
+          set -euo pipefail
+          sh rethink/test.sh "$IMAGE" "$APP_REVISION"
+          printf 'image_id=%s\n' "$(docker image inspect "$IMAGE" --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
       - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
       - name: Publish same tested image
+        id: published
         env:
+          TESTED_IMAGE_ID: ${{ steps.tested.outputs.image_id }}
           IMAGE: ghcr.io/martinemde/rethink:run-${{ github.run_id }}-${{ github.run_attempt }}
           APP_REVISION: ${{ steps.source.outputs.revision }}
           APP_CI_RUN: ${{ steps.source.outputs.ci_run }}
         run: |
           set -euo pipefail
+          test "$(docker image inspect "$IMAGE" --format '{{.Id}}')" = "$TESTED_IMAGE_ID"
           docker push "$IMAGE"
           reference=$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')
+          [[ "$reference" =~ ^ghcr.io/martinemde/rethink@sha256:[0-9a-f]{64}$ ]]
+          printf 'digest=%s\n' "${reference#*@}" >> "$GITHUB_OUTPUT"
           printf '%s\n' "$reference" > image-digest.txt
           printf 'Published `%s` from application `%s` (CI run %s). No deployment performed.\n' "$reference" "$APP_REVISION" "$APP_CI_RUN" >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest exact tested and pushed manifest digest
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-name: ghcr.io/martinemde/rethink
+          subject-digest: ${{ steps.published.outputs.digest }}
+          push-to-registry: true
       - name: Save immutable reference
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
         with:

@@ -15,7 +15,18 @@ is unchanged. This adds automatic publication for future application main merges
 - Discovery tag: `ghcr.io/martinemde/rethink:run-<run_id>-<run_attempt>`.
 - OCI source identifies containers; OCI revision identifies publisher commit;
   `io.github.martinemde.rethink.revision` identifies exact application commit.
-- Consumer independently verifies run, tag/digest, labels and application CI.
+- After smoke/push, GitHub build provenance attests the exact pushed manifest
+  digest via pinned `actions/attest-build-provenance` v3. The local image ID must
+  still match the smoke-tested ID before push; no second build is performed.
+  The job has scoped `id-token: write` and `attestations: write` permissions.
+  Attestation failure fails the publication run before its digest artifact is saved.
+- Consumer independently verifies the signed digest, canonical repository/workflow,
+  main ref and publisher source/signer commit using `gh attestation verify`, then
+  checks image labels and application CI. GitHub API bundles are authoritative;
+  no unsigned legacy publication or registry-label-only fallback is accepted.
+  See deploy-process's `rethink/quadlet-deployment.md` for host CLI/API requirements.
+  The signature binds publisher identity and image bytes, not independent app CI.
+  Workflow execution/signing is still a trusted boundary.
 - Logical release identity is application/publisher revision pair. Consumer skips
   same-pair redeployment after health verification. An intentional rebuild release
   requires a publisher main commit; non-snapshot Alpine packages can change digests.
@@ -56,6 +67,14 @@ Full Podman build completed successfully, including application tests and build.
 Offline network-none smoke passed. JSON image inspection confirmed exact full
 application revision label. Local image retained as
 `localhost/rethink-publisher-contract`; not pushed.
+
+Authenticated provenance update (2026-11-13): 15 offline consumer tests passed,
+including exact manifest bytes and all CLI identity constraints, index/single
+manifest subjects, and fail-closed missing/rejected verifier cases. gh 2.101.0's
+installed `gh attestation verify --help` documents the flags and file interface.
+The attestation action v3 SHA was resolved from its first-party upstream tag.
+These checks do not prove a real signed publication: no publishing, deployment,
+or live signature verification was performed. Existing unsigned images will fail.
 
 `actionlint` is unavailable; workflow reviewed but not executed on GitHub.
 Schedule is best-effort, not a 10-minute SLA. Current failed/pending app main blocks
