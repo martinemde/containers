@@ -1,0 +1,47 @@
+# Only official Docker images; see README.md for publisher verification.
+ARG NUI_VERSION=0.9.3
+ARG NUI_REVISION=ba291a34430c0bdd0d2b45e070a153e62a45289c
+ARG NUI_ARCHIVE_SHA256=35716a04e745c333e9283e82bba635a24ae55c6b5c4966d6b5c26d79ddfaccc9
+FROM docker.io/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS source
+ARG NUI_VERSION
+ARG NUI_REVISION
+ARG NUI_ARCHIVE_SHA256
+WORKDIR /src
+RUN wget -qO /tmp/source.tar.gz https://codeload.github.com/nats-nui/nui/tar.gz/refs/tags/v${NUI_VERSION} \
+    && echo "${NUI_ARCHIVE_SHA256}  /tmp/source.tar.gz" | sha256sum -c - \
+    && wget -qO /tmp/ref.json https://api.github.com/repos/nats-nui/nui/git/ref/tags/v${NUI_VERSION} \
+    && grep -Eq '"sha"[[:space:]]*:[[:space:]]*"'"${NUI_REVISION}"'"' /tmp/ref.json \
+    && tar -xzf /tmp/source.tar.gz --strip-components=1 -C /src \
+    && rm /tmp/source.tar.gz
+
+FROM docker.io/library/node:22-alpine3.23@sha256:6868d4695b947ee120bffaa463fecd68cde370d7bfec92955e7c8ac576b4f475 AS frontend
+WORKDIR /src/frontend
+COPY --from=source /src/frontend/ ./
+COPY package-lock.json ./package-lock.json
+RUN npm ci --ignore-scripts --no-audit --no-fund && npm run build
+
+FROM docker.io/library/golang:1.25-alpine3.23@sha256:27b3069b25647beacd3745b0b2c83e2f9b8d3935455a32cd4531236ee1c960e0 AS backend
+ARG NUI_VERSION
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local
+WORKDIR /src
+COPY --from=source /src/ ./
+RUN go mod download && go mod verify \
+    && go build -mod=readonly -trimpath -buildvcs=false \
+       -ldflags "-s -w -buildid= -X main.Version=${NUI_VERSION}" \
+       -o /out/nui-web ./cmd/server/main.go
+
+FROM docker.io/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS runtime
+ARG NUI_VERSION
+ARG NUI_REVISION
+LABEL org.opencontainers.image.title="NUI" \
+      org.opencontainers.image.version="${NUI_VERSION}" \
+      io.github.martinemde.nui.revision="${NUI_REVISION}"
+WORKDIR /opt/agent-feeds/nui
+COPY --from=backend /out/nui-web ./nui-web
+COPY --from=frontend /src/frontend/dist ./frontend/dist
+RUN mkdir -p ./protoschemas/default /var/lib/agent-feeds-nui /etc/agent-feeds/nui-contexts \
+    && chown 994:987 /var/lib/agent-feeds-nui
+USER 994:987
+EXPOSE 31311
+ENTRYPOINT ["/opt/agent-feeds/nui/nui-web"]
+CMD ["--db-path=/var/lib/agent-feeds-nui", "--nats-cli-contexts=/etc/agent-feeds/nui-contexts"]

@@ -1,0 +1,70 @@
+name: Publish NUI
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - nui/**
+      - .github/workflows/publish-nui.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-nui
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build exact source for offline smoke test
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: nui
+          file: nui/Containerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ghcr.io/martinemde/nui:run-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=nui
+          cache-to: type=gha,mode=max,scope=nui
+      - name: Smoke test without network or privileges
+        env:
+          IMAGE: ghcr.io/martinemde/nui:run-${{ github.run_id }}-${{ github.run_attempt }}
+        run: sh nui/test.sh "$IMAGE"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish same tested image
+        env:
+          IMAGE: ghcr.io/martinemde/nui:run-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          docker push "$IMAGE"
+          version=$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+          docker tag "$IMAGE" "ghcr.io/martinemde/nui:$version"
+          docker push "ghcr.io/martinemde/nui:$version"
+          docker tag "$IMAGE" ghcr.io/martinemde/nui:main
+          docker push ghcr.io/martinemde/nui:main
+          reference=$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')
+          printf '%s\n' "$reference" > image-digest.txt
+          printf 'Published `%s` from pinned public NUI source. No deployment performed.\n' "$reference" >> "$GITHUB_STEP_SUMMARY"
+      - name: Save immutable reference
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: nui-digest
+          path: image-digest.txt
+          if-no-files-found: error

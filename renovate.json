@@ -6,7 +6,8 @@
   "enabledManagers": [
     "dockerfile",
     "github-actions",
-    "renovate-config"
+    "renovate-config",
+    "custom.regex"
   ],
   "dockerfile": {
     "managerFilePatterns": [
@@ -16,8 +17,25 @@
   "automerge": false,
   "packageRules": [
     {
-      "matchPackageNames": ["*"],
+      "matchPackageNames": [
+        "*"
+      ],
       "automerge": false
+    }
+  ],
+  "customManagers": [
+    {
+      "customType": "regex",
+      "managerFilePatterns": [
+        "/^nui/Containerfile$/"
+      ],
+      "matchStrings": [
+        "ARG NUI_VERSION=(?<currentValue>[^\\s]+)"
+      ],
+      "depNameTemplate": "nats-nui/nui",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v(?<version>.*)$",
+      "versioningTemplate": "semver"
     }
   ]
 }
