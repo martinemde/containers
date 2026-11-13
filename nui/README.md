@@ -72,9 +72,26 @@ then pushes **that same image** to `ghcr.io/martinemde/nui:run-<id>-<attempt>`,
 production uses `ghcr.io/martinemde/nui:0.9.3@sha256:...`. Labels record publisher
 source/revision and `io.github.martinemde.nui.revision` for application source.
 The workflow records the immutable reference in the summary and `nui-digest`
-artifact. Initial GHCR publication may require making the package public.
+artifact. It records the smoke-tested image ID, checks that ID before pushing,
+and signs the exact pushed manifest digest using pinned
+`actions/attest-build-provenance` (SLSA v1, GitHub Actions OIDC, GitHub-hosted runner).
+The publish job alone has `id-token: write` and `attestations: write`; provenance
+is stored through GitHub attestations and pushed to GHCR. A successful publish
+requires attestation to succeed. Initial GHCR publication may require making the
+package public.
 Publication does not deploy or migrate runtime state. Until merged and published,
-there is no registry digest to place into a deployment.
+there is no new signed registry digest to place into a deployment. Existing
+unsigned publications must not pass the signed consumer.
+
+Beelink's NUI-only deploy helper verifies public GitHub bundles with
+`gh attestation verify <manifest-file> --bundle <bundles.jsonl>` before any
+pull/cursor/state/unit changes. It requires exact repository, workflow, main ref,
+publisher commit and certificate run ID/attempt, not just forgeable image labels.
+It uses a clean environment and temporary CLI config/home, with no GitHub token
+or registry login. The host must separately provide reviewed `/usr/bin/gh`
+(validated interface: 2.101.0) and public API/trust-root access. Missing or invalid
+provenance fails closed without a label-only compatibility path. This change
+publishes no image and performs no live consumer acceptance or deployment.
 
 Renovate proposes base/tag/digest and GitHub Actions changes. A regex manager
 also proposes upstream NUI version changes. A version-only update deliberately
