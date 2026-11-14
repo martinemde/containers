@@ -80,7 +80,7 @@ jobs:
           printf '%s\n' "$reference" > image-digest.txt
           printf 'Published `%s` from application `%s` (CI run %s). No deployment performed.\n' "$reference" "$APP_REVISION" "$APP_CI_RUN" >> "$GITHUB_STEP_SUMMARY"
       - name: Attest exact tested and pushed manifest digest
-        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4
         with:
           subject-name: ghcr.io/martinemde/rethink
           subject-digest: ${{ steps.published.outputs.digest }}
