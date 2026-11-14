@@ -1,5 +1,5 @@
 # Only official Docker images; see README.md for publisher verification.
-ARG NUI_VERSION=0.9.3
+ARG NUI_VERSION=0.10.0
 ARG NUI_REVISION=ba291a34430c0bdd0d2b45e070a153e62a45289c
 ARG NUI_ARCHIVE_SHA256=35716a04e745c333e9283e82bba635a24ae55c6b5c4966d6b5c26d79ddfaccc9
 FROM docker.io/library/alpine:3.24@sha256:f59abe656b692d901e184be3445e084786602108599d2a51d229c0f5a48c71bf AS source
