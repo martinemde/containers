@@ -1,0 +1,91 @@
+name: Publish Caddy
+
+on:
+  workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - caddy/**
+      - .github/workflows/publish-caddy.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: publish-caddy
+  cancel-in-progress: false
+
+jobs:
+  publish:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+      attestations: write
+    strategy:
+      matrix:
+        variant: [plain, plugin]
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4.4.0
+      - uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f # v3.12.0
+      - name: Build exact source for offline smoke test
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6.19.2
+        with:
+          context: caddy
+          file: caddy/Containerfile
+          target: ${{ matrix.variant == 'plain' && 'plain' || 'runtime' }}
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: ghcr.io/martinemde/caddy-${{ matrix.variant }}:run-${{ github.run_id }}-${{ github.run_attempt }}
+          labels: |
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            org.opencontainers.image.revision=${{ github.sha }}
+          cache-from: type=gha,scope=caddy-${{ matrix.variant }}
+          cache-to: type=gha,mode=max,scope=caddy-${{ matrix.variant }}
+      - name: Smoke test without network or privileges
+        id: tested
+        env:
+          IMAGE: ghcr.io/martinemde/caddy-${{ matrix.variant }}:run-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          sh caddy/test.sh "$IMAGE" "${{ matrix.variant }}"
+          printf 'image_id=%s\n' "$(docker image inspect "$IMAGE" --format '{{.Id}}')" >> "$GITHUB_OUTPUT"
+      - uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9 # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Publish same tested image
+        id: published
+        env:
+          TESTED_IMAGE_ID: ${{ steps.tested.outputs.image_id }}
+          IMAGE: ghcr.io/martinemde/caddy-${{ matrix.variant }}:run-${{ github.run_id }}-${{ github.run_attempt }}
+        run: |
+          set -euo pipefail
+          test "$(docker image inspect "$IMAGE" --format '{{.Id}}')" = "$TESTED_IMAGE_ID"
+          docker push "$IMAGE"
+          version=$(docker image inspect "$IMAGE" --format '{{index .Config.Labels "org.opencontainers.image.version"}}')
+          docker tag "$IMAGE" "ghcr.io/martinemde/caddy-${{ matrix.variant }}:$version"
+          docker push "ghcr.io/martinemde/caddy-${{ matrix.variant }}:$version"
+          docker tag "$IMAGE" ghcr.io/martinemde/caddy-${{ matrix.variant }}:main
+          docker push ghcr.io/martinemde/caddy-${{ matrix.variant }}:main
+          reference=$(docker image inspect "$IMAGE" --format '{{index .RepoDigests 0}}')
+          [[ "$reference" =~ ^ghcr.io/martinemde/caddy-${{ matrix.variant }}@sha256:[0-9a-f]{64}$ ]]
+          printf 'digest=%s\n' "${reference#*@}" >> "$GITHUB_OUTPUT"
+          printf '%s\n' "$reference" > image-digest.txt
+          printf 'Published `%s` from pinned public Caddy and Tailscale sources. No deployment performed.\n' "$reference" >> "$GITHUB_STEP_SUMMARY"
+      - name: Attest exact tested and pushed manifest digest
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-name: ghcr.io/martinemde/caddy-${{ matrix.variant }}
+          subject-digest: ${{ steps.published.outputs.digest }}
+          push-to-registry: true
+      - name: Save immutable reference
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: caddy-${{ matrix.variant }}-digest
+          path: image-digest.txt
+          if-no-files-found: error

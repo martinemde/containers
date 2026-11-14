@@ -1,0 +1,29 @@
+# Official Caddy builder and Debian bases; publisher evidence: README.md.
+FROM docker.io/library/caddy:2.11.9-builder-alpine@sha256:646fee578e680989ca5c7fd1ce6f1de574d19fd71ef2221810cc0510a9f40c86 AS build
+ARG TAILSCALE_PLUGIN_REVISION=de41b249af4fd2083612c3b2303197e92787d1c5
+ENV CGO_ENABLED=0 GOTOOLCHAIN=local XCADDY_SETCAP=0 GOMAXPROCS=2 GOFLAGS=-p=2
+RUN xcaddy build v2.11.9 \
+    --with github.com/tailscale/caddy-tailscale@${TAILSCALE_PLUGIN_REVISION} \
+    --output /out/caddy \
+    && /out/caddy version | grep -E '^v2\.11\.9([[:space:]]|$)' \
+    && /out/caddy list-modules | grep -Fx tailscale
+
+FROM docker.io/library/caddy:2.11.9-alpine@sha256:003a97808e781aa9f7e75cc2f43d34d461099031faf5e20faefb9f61126836f0 AS upstream
+
+# Preserve the deployment's Debian filesystem, UID/GID, environment and command.
+FROM docker.io/library/debian:13-slim@sha256:7378260c0a098d27ac206225db5e7d92b8c7c84ea7afccc86eeb513756bbd392 AS plain
+COPY --from=upstream /usr/bin/caddy /usr/bin/caddy
+LABEL org.opencontainers.image.title="Caddy" \
+      org.opencontainers.image.version="2.11.9"
+USER 1109:1109
+ENV XDG_DATA_HOME=/data XDG_CONFIG_HOME=/config
+ENTRYPOINT ["/usr/bin/caddy"]
+CMD ["run", "--config", "/etc/caddy/Caddyfile", "--adapter", "caddyfile"]
+
+# Only replace the executable after the plain upgrade is independently verified.
+FROM plain AS runtime
+ARG TAILSCALE_PLUGIN_REVISION=de41b249af4fd2083612c3b2303197e92787d1c5
+LABEL org.opencontainers.image.title="Caddy with Tailscale" \
+      org.opencontainers.image.version="2.11.9" \
+      io.github.martinemde.caddy.tailscale-revision="${TAILSCALE_PLUGIN_REVISION}"
+COPY --from=build /out/caddy /usr/bin/caddy
